@@ -21,12 +21,14 @@ const FIELDS = {
   emp_type:   ['type', 'employmenttype', 'contracttype', 'fteoutsource', 'fte', 'النوع'],
   manager1:   ['manager1code', 'manager1', 'firstmanagercode', 'firstmanager', 'manager', 'managercode'],
   manager2:   ['manager2code', 'manager2', 'secondmanagercode', 'secondmanager'],
+  national_id: ['nationalid', 'nid', 'nationalidnumber', 'idnumber', 'الرقمالقومي', 'رقمالبطاقة', 'رقمقومي'],
 };
 
 function readSheet(buffer) {
   const wb = XLSX.read(buffer, { type: 'buffer' });
   const ws = wb.Sheets[wb.SheetNames[0]];
-  const rows = XLSX.utils.sheet_to_json(ws, { defval: '', raw: false });
+  // raw values so long numbers (national IDs, codes) are not turned into 2.9E+13
+  const rows = XLSX.utils.sheet_to_json(ws, { defval: '', raw: true });
   if (!rows.length) return { rows: [], map: {} };
   const headers = Object.keys(rows[0]);
   const map = {};
@@ -124,6 +126,61 @@ router.post('/titles', upload.single('file'), async (req, res) => {
   } finally {
     client.release();
   }
+});
+
+// File 3: managers allowed to request. Only these get manager accounts.
+// Password = last 4 digits of the national ID (the ID itself is never stored).
+router.post('/managers', upload.single('file'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'Choose an Excel file first' });
+  const { hashPassword } = require('../auth');
+  const { rows, map, headers } = readSheet(req.file.buffer);
+  const miss = missing(map, ['code', 'name', 'national_id']);
+  if (miss.length) {
+    return res.status(400).json({ error: `Missing columns: ${miss.join(', ')}. Found: ${(headers || []).join(', ')}` });
+  }
+
+  const managers = [];
+  const skipped = [];
+  for (const r of rows) {
+    const code = clean(r[map.code]);
+    if (!code) continue;
+    const digits = clean(r[map.national_id]).replace(/\D/g, '');
+    if (digits.length < 4) { skipped.push(code); continue; }
+    managers.push({ code, name: cleanText(r[map.name]), pass: digits.slice(-4) });
+  }
+  if (!managers.length) return res.status(400).json({ error: 'No valid rows found in the file' });
+
+  const client = await pool.connect();
+  let created = 0, updated = 0, removed = 0;
+  try {
+    await client.query('BEGIN');
+    for (const m of managers) {
+      const ex = await client.query('SELECT role FROM users WHERE LOWER(code) = LOWER($1)', [m.code]);
+      if (!ex.rows.length) {
+        await client.query('INSERT INTO users (code, name, role, password_hash) VALUES ($1,$2,$3,$4)',
+          [m.code, m.name, 'manager', hashPassword(m.pass)]);
+        created++;
+      } else {
+        // keep their current password and role (HR / OD BU stay as they are)
+        await client.query('UPDATE users SET name = $1 WHERE LOWER(code) = LOWER($2)', [m.name, m.code]);
+        updated++;
+      }
+    }
+    // manager accounts not in the file lose access
+    const del = await client.query(
+      `DELETE FROM users WHERE role = 'manager' AND NOT (LOWER(code) = ANY($1))`,
+      [managers.map((m) => m.code.toLowerCase())]);
+    removed = del.rowCount;
+    await client.query('INSERT INTO upload_log (kind, rows_count, uploaded_by) VALUES ($1,$2,$3)',
+      ['managers', managers.length, req.user.code]);
+    await client.query('COMMIT');
+  } catch (e) {
+    await client.query('ROLLBACK');
+    throw e;
+  } finally {
+    client.release();
+  }
+  res.json({ ok: true, rows: managers.length, created, updated, removed, skipped });
 });
 
 router.get('/status', async (req, res) => {

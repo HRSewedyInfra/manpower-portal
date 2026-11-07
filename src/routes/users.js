@@ -51,25 +51,4 @@ router.delete('/:code', async (req, res) => {
   res.json({ ok: true });
 });
 
-// Create manager accounts for every manager code found in both files that has no account yet
-router.post('/bulk-managers', async (req, res) => {
-  const password = String(req.body.password || '');
-  if (password.length < 4) return res.status(400).json({ error: 'Default password must be 4+ characters' });
-  const { rows } = await pool.query(`
-    SELECT DISTINCT c AS code FROM (
-      SELECT manager1_code AS c FROM employees UNION SELECT manager2_code FROM employees
-      UNION SELECT manager1_code FROM titles UNION SELECT manager2_code FROM titles
-    ) x
-    WHERE c <> '' AND NOT EXISTS (SELECT 1 FROM users u WHERE LOWER(u.code) = LOWER(x.c))`);
-  const hash = hashPassword(password);
-  let created = 0;
-  for (const r of rows) {
-    const nm = await pool.query('SELECT name FROM employees WHERE code = $1 LIMIT 1', [r.code]);
-    await pool.query('INSERT INTO users (code, name, role, password_hash) VALUES ($1,$2,$3,$4) ON CONFLICT (code) DO NOTHING',
-      [r.code, nm.rows[0] ? nm.rows[0].name : '', 'manager', hash]);
-    created++;
-  }
-  res.json({ created });
-});
-
 module.exports = router;

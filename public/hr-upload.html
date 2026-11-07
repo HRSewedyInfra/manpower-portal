@@ -30,11 +30,14 @@
   </div>
 
   <div class="card">
-    <h2>3. Manager accounts</h2>
-    <p class="subtitle" style="margin-bottom:10px">After uploading both files, create accounts for every manager code in them that has no account yet.
-      They sign in with their code and the password below, and can change it later.</p>
-    <div class="row"><input id="defPass" placeholder="Default password" style="max-width:260px"><button class="btn" onclick="bulk()">Create manager accounts</button></div>
-    <div id="msgBulk" class="msg"></div>
+    <h2>3. Managers file (accounts)</h2>
+    <p class="subtitle" style="margin-bottom:10px">Columns: <b>Code, Name, National ID</b>.
+      Only the managers in this file get an account. They sign in with their code, and their password is the
+      <b>last 4 digits of their National ID</b> (they can change it later). The National ID itself is not saved.
+      Manager accounts that are not in the file are removed. HR and OD BU accounts are not affected.</p>
+    <p><a href="/templates/managers-template.xlsx" download>Download the template</a> · <span id="stMgr" class="subtitle"></span></p>
+    <div class="row"><input type="file" id="fileMgr" accept=".xlsx,.xls,.csv" style="max-width:380px"><button class="btn" onclick="upManagers()">Upload</button></div>
+    <div id="msgMgr" class="msg"></div>
   </div>
 </main>
 <script src="/assets/app.js"></script>
@@ -46,6 +49,7 @@
     const t = (k) => { const r = rows.find((x) => x.kind === k); return r ? `Last upload: ${r.rows_count} rows on ${fmtDateTime(r.uploaded_at)}` : 'Not uploaded yet'; };
     stEmp.textContent = t('employees');
     stTit.textContent = t('titles');
+    stMgr.textContent = t('managers');
   }
 
   async function up(kind, inputId, msgId) {
@@ -62,11 +66,19 @@
     } catch (e) { showMsg(msg, e.message, false); }
   }
 
-  async function bulk() {
+  async function upManagers() {
+    const f = fileMgr.files[0];
+    if (!f) return showMsg(msgMgr, 'Choose a file first', false);
+    const fd = new FormData();
+    fd.append('file', f);
+    showMsg(msgMgr, 'Uploading…', true);
     try {
-      const r = await api('/api/users/bulk-managers', { method: 'POST', body: { password: defPass.value } });
-      showMsg(msgBulk, r.created ? `${r.created} manager accounts created.` : 'All managers already have accounts.', true);
-    } catch (e) { showMsg(msgBulk, e.message, false); }
+      const r = await api('/api/upload/managers', { method: 'POST', body: fd });
+      let t = `${r.rows} managers in the file: ${r.created} new accounts, ${r.updated} already had accounts, ${r.removed} old manager accounts removed.`;
+      if (r.skipped.length) t += ` Skipped (National ID missing or too short): ${r.skipped.join(', ')}`;
+      showMsg(msgMgr, t, true);
+      status();
+    } catch (e) { showMsg(msgMgr, e.message, false); }
   }
 
   status();

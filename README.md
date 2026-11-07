@@ -21,8 +21,9 @@
 
 1. ادخل بحساب HR (ADMIN_CODE و ADMIN_PASSWORD).
 2. افتح كارت Upload Data وارفع ملف الموظفين وبعده ملف الـ Titles.
-3. في نفس الصفحة اكتب باسورد افتراضي ودوس Create manager accounts.
-4. من كارت Users غيّر دور مسؤول OD BU من Manager إلى OD BU.
+3. ارفع ملف المديرين (Code, Name, National ID). المديرين اللي في الملف ده بس هيبقى ليهم يوزر.
+   كل مدير يدخل بكوده، والباسورد آخر 4 أرقام من رقم البطاقة. الرقم القومي نفسه مش بيتحفظ.
+4. من كارت Users ضيف حساب OD BU بنفسك.
 
 ## شكل الملفين
 
@@ -31,6 +32,9 @@ Code, Name, Title, Department, Location, Type, Manager 1 Code, Manager 2 Code
 
 ملف الـ Titles:
 Title, Department, Manager 1 Code, Manager 2 Code
+
+ملف المديرين:
+Code, Name, National ID
 
 الـ Type بيتكتب FTE أو Outsource. عمود Manager 2 Code اختياري.
 فيه نموذج جاهز للملفين في صفحة Upload Data.
