@@ -21,6 +21,14 @@ const FIELDS = {
   emp_type:   ['type', 'employmenttype', 'contracttype', 'fteoutsource', 'fte', 'النوع'],
   manager1:   ['manager1code', 'manager1', 'firstmanagercode', 'firstmanager', 'manager', 'managercode'],
   manager2:   ['manager2code', 'manager2', 'secondmanagercode', 'secondmanager'],
+  project:    ['project', 'projectname', 'المشروع'],
+  quantity:   ['number', 'numberneeded', 'quantity', 'qty', 'count', 'العدد'],
+  required_from: ['requiredfrom', 'requireddate', 'neededfrom', 'startdate', 'from'],
+  stage:      ['currentstage', 'stage', 'status', 'المرحلة'],
+  taleo:      ['taleonumber', 'taleono', 'taleo', 'requisitionnumber', 'requisitionno'],
+  request_date: ['requestdate', 'requestedon', 'date', 'createdat'],
+  stage_date: ['stagestartdate', 'stagedate', 'instagesince', 'since'],
+  comment:    ['comment', 'comments', 'odcomment', 'notes', 'ملاحظات'],
   national_id: ['nationalid', 'nid', 'nationalidnumber', 'idnumber', 'الرقمالقومي', 'رقمالبطاقة', 'رقمقومي'],
 };
 
@@ -181,6 +189,137 @@ router.post('/managers', upload.single('file'), async (req, res) => {
     client.release();
   }
   res.json({ ok: true, rows: managers.length, created, updated, removed, skipped });
+});
+
+// ---------- One-time import of old requests that are already in progress ----------
+function parseDate(v) {
+  if (v === '' || v == null) return null;
+  if (typeof v === 'number') {
+    const d = XLSX.SSF.parse_date_code(v);
+    if (!d) return null;
+    return `${d.y}-${String(d.m).padStart(2, '0')}-${String(d.d).padStart(2, '0')}`;
+  }
+  if (v instanceof Date) return v.toISOString().slice(0, 10);
+  const t = String(v).trim();
+  let m = t.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (m) return `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`;
+  m = t.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})$/); // day/month/year
+  if (m) return `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
+  return 'invalid';
+}
+
+// returns the stage number the request is in now: 1-4, or 5 = requisition open
+function parseStage(v) {
+  const t = norm(v);
+  if (['odbu', 'bu'].includes(t)) return 1;
+  if (['odgroup', 'group', 'groupod'].includes(t)) return 2;
+  if (t === 'hris') return 3;
+  if (t === 'hcm') return 4;
+  if (['requisitionopen', 'requisition', 'open', 'taleo'].includes(t)) return 5;
+  return 0;
+}
+
+router.get('/old-requests', async (req, res) => {
+  const { rows } = await pool.query(`
+    SELECT COUNT(*)::int AS n, MIN(l.uploaded_at) AS at FROM manpower_requests r
+    LEFT JOIN upload_log l ON l.kind = 'old_requests' WHERE r.imported`);
+  res.json(rows[0]);
+});
+
+router.post('/old-requests', upload.single('file'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'Choose an Excel file first' });
+  const already = await pool.query('SELECT 1 FROM manpower_requests WHERE imported LIMIT 1');
+  if (already.rows.length) return res.status(400).json({ error: 'Old requests were already uploaded. Undo the import first if you need to upload again.' });
+
+  const { rows, map, headers } = readSheet(req.file.buffer);
+  const miss = missing(map, ['manager1', 'title', 'department', 'stage']);
+  if (miss.length) {
+    return res.status(400).json({ error: `Missing columns: ${miss.join(', ')}. Found: ${(headers || []).join(', ')}` });
+  }
+
+  const today = new Date().toISOString().slice(0, 10);
+  const items = [];
+  const errors = [];
+  rows.forEach((r, i) => {
+    const line = i + 2;
+    const managerCode = clean(r[map.manager1]);
+    const title = cleanText(r[map.title]);
+    if (!managerCode && !title) return; // empty row
+    const stage = parseStage(r[map.stage]);
+    const requestDate = map.request_date ? parseDate(r[map.request_date]) : null;
+    const stageDate = map.stage_date ? parseDate(r[map.stage_date]) : null;
+    const requiredFrom = map.required_from ? parseDate(r[map.required_from]) : null;
+    const taleo = map.taleo ? clean(r[map.taleo]) : '';
+    if (!managerCode || !title) errors.push(`Row ${line}: manager code and title are required`);
+    else if (!stage) errors.push(`Row ${line}: unknown stage "${r[map.stage]}" (use OD BU, OD Group, HRIS, HCM or Requisition open)`);
+    else if ([requestDate, stageDate, requiredFrom].includes('invalid')) errors.push(`Row ${line}: a date is not readable (use YYYY-MM-DD or DD/MM/YYYY)`);
+    else if (stage === 5 && !taleo) errors.push(`Row ${line}: Taleo number is required for Requisition open`);
+    else {
+      const created = requestDate || stageDate || today;
+      items.push({
+        managerCode, title, stage, taleo,
+        department: cleanText(r[map.department]),
+        location: map.location ? cleanText(r[map.location]) : '',
+        project: map.project ? cleanText(r[map.project]) || '-' : '-',
+        quantity: map.quantity ? Math.max(1, parseInt(r[map.quantity], 10) || 1) : 1,
+        requiredFrom: requiredFrom || created,
+        created,
+        stageStart: stageDate || today,
+        comment: map.comment ? cleanText(r[map.comment]) : '',
+      });
+    }
+  });
+  if (errors.length) return res.status(400).json({ error: 'Nothing was uploaded. Fix these rows first:\n' + errors.slice(0, 30).join('\n') });
+  if (!items.length) return res.status(400).json({ error: 'No rows found in the file' });
+
+  const { STAGES } = require('../workdays');
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    for (const it of items) {
+      const nm = await client.query(
+        `SELECT name FROM users WHERE LOWER(code) = LOWER($1)
+         UNION ALL SELECT name FROM employees WHERE LOWER(code) = LOWER($1) LIMIT 1`, [it.managerCode]);
+      const isOpen = it.stage === 5;
+      const r = await client.query(
+        `INSERT INTO manpower_requests (manager_code, manager_name, title, department, location, project, quantity,
+           required_from, status, taleo_number, taleo_opened_at, created_at, imported)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,TRUE) RETURNING id`,
+        [it.managerCode, nm.rows[0] ? nm.rows[0].name : '', it.title, it.department, it.location, it.project,
+          it.quantity, it.requiredFrom, isOpen ? 'requisition_open' : 'in_progress', isOpen ? it.taleo : null,
+          isOpen ? it.stageStart + 'T09:00:00+02:00' : null, it.created + 'T09:00:00+02:00']);
+      const id = r.rows[0].id;
+      for (const s of STAGES) {
+        let started = null, completed = null, by = null;
+        if (s.order < it.stage) { started = it.created + 'T09:00:00+02:00'; completed = it.stageStart + 'T09:00:00+02:00'; by = 'Imported'; }
+        else if (s.order === it.stage) started = it.stageStart + 'T09:00:00+02:00';
+        await client.query(
+          `INSERT INTO request_stages (request_id, stage_order, stage_name, duration_days, started_at, completed_at, completed_by)
+           VALUES ($1,$2,$3,$4,$5,$6,$7)`, [id, s.order, s.name, s.days, started, completed, by]);
+      }
+      if (it.comment) {
+        await client.query('INSERT INTO request_comments (request_id, author_code, author_name, body) VALUES ($1,$2,$3,$4)',
+          [id, req.user.code, req.user.name || 'HR', it.comment]);
+      }
+    }
+    await client.query("DELETE FROM upload_log WHERE kind = 'old_requests'");
+    await client.query('INSERT INTO upload_log (kind, rows_count, uploaded_by) VALUES ($1,$2,$3)',
+      ['old_requests', items.length, req.user.code]);
+    await client.query('COMMIT');
+  } catch (e) {
+    await client.query('ROLLBACK');
+    throw e;
+  } finally {
+    client.release();
+  }
+  res.json({ ok: true, rows: items.length });
+});
+
+// Undo: removes only the imported requests (in case the file had a mistake)
+router.delete('/old-requests', async (req, res) => {
+  const del = await pool.query('DELETE FROM manpower_requests WHERE imported');
+  await pool.query("DELETE FROM upload_log WHERE kind = 'old_requests'");
+  res.json({ ok: true, removed: del.rowCount });
 });
 
 router.get('/status', async (req, res) => {

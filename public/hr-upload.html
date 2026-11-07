@@ -40,6 +40,16 @@
     <div class="row"><input type="file" id="fileMgr" accept=".xlsx,.xls,.csv" style="max-width:380px"><button class="btn" onclick="upManagers()">Upload</button></div>
     <div id="msgMgr" class="msg"></div>
   </div>
+  <div class="card" style="border-color:#e8c26b">
+    <h2>4. Old requests — one time only</h2>
+    <p class="subtitle" style="margin-bottom:10px">Use this once to bring in requests that were already in progress before the portal.
+      Each request goes straight to its current stage and shows up for its manager. The stages before it are marked done.<br>
+      Columns: <b>Manager Code, Title, Department, Current Stage</b> (OD BU, OD Group, HRIS, HCM or Requisition open),
+      and optional: Location, Project, Number, Required From, Request Date, Stage Start Date, Taleo Number (needed for Requisition open), Comment.</p>
+    <p><a href="/templates/old-requests-template.xlsx" download>Download the template</a></p>
+    <div id="oldBox"></div>
+    <div id="msgOld" class="msg"></div>
+  </div>
 </main>
 <script src="/assets/app.js"></script>
 <script>
@@ -82,7 +92,37 @@
     } catch (e) { showMsg(msgMgr, e.message, false); }
   }
 
+  async function oldStatus() {
+    const r = await api('/api/upload/old-requests').catch(() => ({ n: 0 }));
+    oldBox.innerHTML = r.n
+      ? `<div class="row"><span class="badge green">Done</span> ${r.n} old requests uploaded${r.at ? ' on ' + fmtDateTime(r.at) : ''}.
+         <button class="btn secondary small" style="color:var(--red)" onclick="undoOld()">Undo import</button></div>`
+      : `<div class="row"><input type="file" id="fileOld" accept=".xlsx,.xls,.csv" style="max-width:380px">
+         <button class="btn" onclick="upOld()">Upload old requests</button></div>`;
+  }
+  async function upOld() {
+    const f = document.getElementById('fileOld').files[0];
+    if (!f) return showMsg(msgOld, 'Choose a file first', false);
+    const fd = new FormData();
+    fd.append('file', f);
+    showMsg(msgOld, 'Uploading…', true);
+    try {
+      const r = await api('/api/upload/old-requests', { method: 'POST', body: fd });
+      showMsg(msgOld, `${r.rows} old requests uploaded. Each manager can see his requests now.`, true);
+      oldStatus();
+    } catch (e) { showMsg(msgOld, e.message, false); }
+  }
+  async function undoOld() {
+    if (!confirm('This deletes all the imported old requests (including any stages OD BU marked on them since). Continue?')) return;
+    try {
+      const r = await api('/api/upload/old-requests', { method: 'DELETE' });
+      showMsg(msgOld, `${r.removed} imported requests removed. You can upload the file again.`, true);
+      oldStatus();
+    } catch (e) { showMsg(msgOld, e.message, false); }
+  }
+
   status();
+  oldStatus();
 </script>
 </body>
 </html>

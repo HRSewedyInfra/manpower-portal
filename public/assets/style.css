@@ -82,7 +82,7 @@ input:focus, select:focus, textarea:focus { outline: 2px solid rgba(192,0,0,.25)
 .btn.small { padding: 5px 10px; font-size: 12px; }
 .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 
-.msg { padding: 10px 12px; border-radius: 7px; margin-top: 12px; font-size: 13px; display: none; }
+.msg { white-space: pre-line; padding: 10px 12px; border-radius: 7px; margin-top: 12px; font-size: 13px; display: none; }
 .msg.ok { display: block; background: var(--green-bg); color: var(--green); }
 .msg.err { display: block; background: var(--red-bg); color: var(--red); }
 

@@ -85,3 +85,6 @@ CREATE TABLE IF NOT EXISTS request_comments (
 
 -- v2: location on each request
 ALTER TABLE manpower_requests ADD COLUMN IF NOT EXISTS location TEXT NOT NULL DEFAULT '';
+
+-- v3: requests imported once from the old sheet
+ALTER TABLE manpower_requests ADD COLUMN IF NOT EXISTS imported BOOLEAN NOT NULL DEFAULT FALSE;
