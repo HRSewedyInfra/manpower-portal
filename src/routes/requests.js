@@ -11,14 +11,20 @@ const odOnly = requireRole('od_bu', 'hr');
 
 router.get('/config', (req, res) => res.json({ stages: STAGES, requisitionDays: REQUISITION_DAYS }));
 
-// Titles this manager can request (manager 1 or manager 2 on the titles file)
-router.get('/my-titles', async (req, res) => {
-  const { rows } = await pool.query(
-    `SELECT DISTINCT title, department FROM titles
-     WHERE LOWER(manager1_code) = LOWER($1) OR LOWER(manager2_code) = LOWER($1)
-     ORDER BY department, title`, [req.user.code]);
-  res.json(rows);
-});
+// Every manager sees all departments, titles and locations.
+// Titles come from the titles file plus the titles found in the employees file.
+async function getOptions() {
+  const t = await pool.query(`
+    SELECT DISTINCT title, department FROM (
+      SELECT title, department FROM titles
+      UNION SELECT title, department FROM employees
+    ) x WHERE title <> '' AND department <> ''
+    ORDER BY department, title`);
+  const l = await pool.query(`SELECT DISTINCT location FROM employees WHERE location <> '' ORDER BY location`);
+  return { titles: t.rows, locations: l.rows.map((r) => r.location) };
+}
+
+router.get('/options', async (req, res) => res.json(await getOptions()));
 
 router.post('/', async (req, res) => {
   const title = String(req.body.title || '').trim();
@@ -27,23 +33,24 @@ router.post('/', async (req, res) => {
   const quantity = parseInt(req.body.quantity, 10) || 1;
   const requiredFrom = String(req.body.required_from || '');
   const notes = String(req.body.notes || '').trim();
+  const location = String(req.body.location || '').trim();
 
-  if (!title || !project || !/^\d{4}-\d{2}-\d{2}$/.test(requiredFrom) || quantity < 1) {
-    return res.status(400).json({ error: 'Title, project, quantity and required date are required' });
+  if (!title || !location || !project || !/^\d{4}-\d{2}-\d{2}$/.test(requiredFrom) || quantity < 1) {
+    return res.status(400).json({ error: 'Department, title, location, project, number and required date are required' });
   }
-  const allowed = await pool.query(
-    `SELECT 1 FROM titles WHERE title = $1 AND department = $2
-     AND (LOWER(manager1_code) = LOWER($3) OR LOWER(manager2_code) = LOWER($3)) LIMIT 1`,
-    [title, department, req.user.code]);
-  if (!allowed.rows.length) return res.status(403).json({ error: 'This title is not assigned to you' });
+  const opts = await getOptions();
+  if (!opts.titles.some((t) => t.title === title && t.department === department)) {
+    return res.status(400).json({ error: 'This title is not in this department' });
+  }
+  if (!opts.locations.includes(location)) return res.status(400).json({ error: 'Unknown location' });
 
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
     const r = await client.query(
-      `INSERT INTO manpower_requests (manager_code, manager_name, title, department, project, quantity, required_from, notes)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id, created_at`,
-      [req.user.code, req.user.name || '', title, department, project, quantity, requiredFrom, notes]);
+      `INSERT INTO manpower_requests (manager_code, manager_name, title, department, location, project, quantity, required_from, notes)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id, created_at`,
+      [req.user.code, req.user.name || '', title, department, location, project, quantity, requiredFrom, notes]);
     const { id, created_at } = r.rows[0];
     for (const s of STAGES) {
       await client.query(
@@ -99,14 +106,10 @@ async function loadRequests(where, params) {
     comments.rows.filter((c) => c.request_id === r.id)));
 }
 
-// Manager: own requests + requests on titles they share with another manager. OD BU / HR: all.
+// Manager: own requests only. OD BU / HR: all.
 router.get('/', async (req, res) => {
   if (isOD(req.user)) return res.json(await loadRequests('', []));
-  res.json(await loadRequests(
-    `WHERE LOWER(manager_code) = LOWER($1) OR EXISTS (
-       SELECT 1 FROM titles t WHERE t.title = manpower_requests.title AND t.department = manpower_requests.department
-       AND (LOWER(t.manager1_code) = LOWER($1) OR LOWER(t.manager2_code) = LOWER($1)))`,
-    [req.user.code]));
+  res.json(await loadRequests('WHERE LOWER(manager_code) = LOWER($1)', [req.user.code]));
 });
 
 async function getRequest(id) {

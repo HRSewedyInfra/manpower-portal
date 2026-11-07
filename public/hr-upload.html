@@ -22,8 +22,9 @@
 
   <div class="card">
     <h2>2. Titles file</h2>
-    <p class="subtitle" style="margin-bottom:10px">Columns: <b>Title, Department, Manager 1 Code</b>, Manager 2 Code (optional).
-      Each title appears for manager 1 and manager 2 under <i>Request Manpower</i>.</p>
+    <p class="subtitle" style="margin-bottom:10px">Columns: <b>Title, Department</b>.
+      All managers see every title under its department in <i>Request Manpower</i>. Titles in the employees file are added automatically,
+      so use this file for titles that have no employees yet. Locations come from the employees file.</p>
     <p><a href="/templates/titles-template.xlsx" download>Download the template</a> · <span id="stTit" class="subtitle"></span></p>
     <div class="row"><input type="file" id="fileTit" accept=".xlsx,.xls,.csv" style="max-width:380px"><button class="btn" onclick="up('titles','fileTit','msgTit')">Upload</button></div>
     <div id="msgTit" class="msg"></div>

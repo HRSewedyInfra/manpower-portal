@@ -31,7 +31,8 @@
 Code, Name, Title, Department, Location, Type, Manager 1 Code, Manager 2 Code
 
 ملف الـ Titles:
-Title, Department, Manager 1 Code, Manager 2 Code
+Title, Department
+(كل المديرين بيشوفوا كل الـ Titles وكل الـ Locations. الـ Locations بتيجي من ملف الموظفين)
 
 ملف المديرين:
 Code, Name, National ID

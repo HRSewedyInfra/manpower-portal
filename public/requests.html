@@ -18,12 +18,13 @@
       <div class="form-grid">
         <div><label>Department</label><select id="dept" required></select></div>
         <div><label>Title</label><select id="title" required></select></div>
+        <div><label>Location</label><select id="loc" required></select></div>
         <div><label>Project</label><input id="project" required placeholder="Project name"></div>
         <div><label>Number needed</label><input id="qty" type="number" min="1" value="1" required></div>
         <div><label>Required from</label><input id="reqFrom" type="date" required></div>
       </div>
       <div style="margin-top:14px"><label>Notes (optional)</label><textarea id="notes" rows="2" placeholder="Any details OD BU should know"></textarea></div>
-      <div class="row" style="margin-top:14px"><button class="btn">Submit request</button></div>
+      <div class="row" style="margin-top:14px"><button class="btn">Add</button></div>
       <div id="formMsg" class="msg"></div>
     </form>
   </div>
@@ -130,7 +131,7 @@
       <div class="req-head">
         <div>
           <div class="t">${esc(r.title)} <span class="badge grey">× ${r.quantity}</span></div>
-          <div class="meta">${esc(r.department)} · Project: <b>${esc(r.project)}</b> · Required from <b>${fmtDate(r.required_from)}</b></div>
+          <div class="meta">${esc(r.department)} · 📍 ${esc(r.location || '-')} · Project: <b>${esc(r.project)}</b> · Required from <b>${fmtDate(r.required_from)}</b></div>
           <div class="meta">#${r.id} · Requested by ${esc(r.manager_name || r.manager_code)} on ${fmtDate(r.created_at)}</div>
           ${r.notes ? `<div class="meta">Notes: ${esc(r.notes)}</div>` : ''}
         </div>
@@ -154,7 +155,7 @@
         if (cur !== stg) return false;
       }
       if (d && r.department !== d) return false;
-      if (q && ![r.title, r.project, r.manager_name, r.manager_code, r.taleo_number, r.id].join(' ').toLowerCase().includes(q)) return false;
+      if (q && ![r.title, r.project, r.location, r.manager_name, r.manager_code, r.taleo_number, r.id].join(' ').toLowerCase().includes(q)) return false;
       return true;
     });
   }
@@ -203,27 +204,31 @@
   }
 
   function exportCsv() {
-    const head = ['#', 'Title', 'Qty', 'Department', 'Project', 'Required from', 'Manager', 'Requested on', 'Status',
+    const head = ['#', 'Title', 'Qty', 'Department', 'Location', 'Project', 'Required from', 'Manager', 'Requested on', 'Status',
       ...CONFIG.stages.map((s) => s.name + ' done'), 'Taleo no.', 'Requisition opened', 'Last comment'];
     downloadCsv('manpower-requests.csv', [head, ...filtered().map((r) => [
-      r.id, r.title, r.quantity, r.department, r.project, r.required_from, r.manager_name || r.manager_code,
+      r.id, r.title, r.quantity, r.department, r.location, r.project, r.required_from, r.manager_name || r.manager_code,
       fmtDate(r.created_at), (STATUS[r.status] || [r.status])[0],
       ...r.stages.map((s) => fmtDate(s.completed_at)), r.taleo_number || '', fmtDate(r.taleo_opened_at),
       r.comments.length ? r.comments[r.comments.length - 1].body : ''])]);
   }
 
-  // Manager form
+  // Manager form: every manager sees all departments, titles and locations
   let TITLES = [];
   async function loadTitles() {
-    TITLES = await api('/api/requests/my-titles');
-    const depts = [...new Set(TITLES.map((t) => t.department))];
-    if (!TITLES.length) {
-      reqForm.innerHTML = '<div class="empty">No titles are assigned to you yet. Please contact HR.</div>';
+    const o = await api('/api/requests/options');
+    TITLES = o.titles;
+    if (!TITLES.length || !o.locations.length) {
+      reqForm.innerHTML = '<div class="empty">Titles and locations are not uploaded yet. Please contact HR.</div>';
       return;
     }
-    dept.innerHTML = depts.map((d) => `<option>${esc(d)}</option>`).join('');
+    const depts = [...new Set(TITLES.map((t) => t.department))];
+    dept.innerHTML = '<option value="">Choose department</option>' + depts.map((d) => `<option>${esc(d)}</option>`).join('');
+    loc.innerHTML = '<option value="">Choose location</option>' + o.locations.map((l) => `<option>${esc(l)}</option>`).join('');
     const fillTitles = () => {
-      title.innerHTML = TITLES.filter((t) => t.department === dept.value).map((t) => `<option>${esc(t.title)}</option>`).join('');
+      const list = TITLES.filter((t) => t.department === dept.value);
+      title.innerHTML = '<option value="">' + (dept.value ? 'Choose title' : 'Choose department first') + '</option>' +
+        list.map((t) => `<option>${esc(t.title)}</option>`).join('');
     };
     dept.addEventListener('change', fillTitles);
     fillTitles();
@@ -234,10 +239,10 @@
     e.preventDefault();
     try {
       await api('/api/requests', { method: 'POST', body: {
-        department: dept.value, title: title.value, project: project.value,
+        department: dept.value, title: title.value, location: loc.value, project: project.value,
         quantity: qty.value, required_from: reqFrom.value, notes: notes.value } });
-      showMsg(formMsg, 'Request submitted. It is now with OD BU.', true);
-      project.value = ''; notes.value = ''; qty.value = 1;
+      showMsg(formMsg, 'Request added. It is now with OD BU and HR.', true);
+      project.value = ''; notes.value = ''; qty.value = 1; title.value = ''; loc.value = '';
       await loadRequests();
     } catch (err) { showMsg(formMsg, err.message, false); }
   });

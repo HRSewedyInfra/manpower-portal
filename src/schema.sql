@@ -82,3 +82,6 @@ CREATE TABLE IF NOT EXISTS request_comments (
   body TEXT NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- v2: location on each request
+ALTER TABLE manpower_requests ADD COLUMN IF NOT EXISTS location TEXT NOT NULL DEFAULT '';

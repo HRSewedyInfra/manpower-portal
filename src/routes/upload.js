@@ -100,13 +100,13 @@ router.post('/employees', upload.single('file'), async (req, res) => {
 router.post('/titles', upload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'Choose an Excel file first' });
   const { rows, map, headers } = readSheet(req.file.buffer);
-  const miss = missing(map, ['title', 'department', 'manager1']);
+  const miss = missing(map, ['title', 'department']);
   if (miss.length) {
     return res.status(400).json({ error: `Missing columns: ${miss.join(', ')}. Found: ${(headers || []).join(', ')}` });
   }
   const data = rows
     .map((r) => [cleanText(r[map.title]), cleanText(r[map.department]),
-      clean(r[map.manager1]), map.manager2 ? clean(r[map.manager2]) : ''])
+      map.manager1 ? clean(r[map.manager1]) : '', map.manager2 ? clean(r[map.manager2]) : ''])
     .filter((r) => r[0]);
 
   const client = await pool.connect();
