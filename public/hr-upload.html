@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Upload Data</title>
+<link rel="stylesheet" href="/assets/style.css">
+</head>
+<body>
+<main class="page">
+  <h1>Upload Data</h1>
+  <p class="subtitle">Each upload replaces the previous data of the same file completely.</p>
+
+  <div class="card">
+    <h2>1. Employees file</h2>
+    <p class="subtitle" style="margin-bottom:10px">Columns: <b>Code, Name, Title, Department, Location, Type</b> (FTE / Outsource), <b>Manager 1 Code</b>, Manager 2 Code (optional).
+      Each employee is shown to manager 1 and manager 2 under <i>Actual Manpower</i>.</p>
+    <p><a href="/templates/employees-template.xlsx" download>Download the template</a> · <span id="stEmp" class="subtitle"></span></p>
+    <div class="row"><input type="file" id="fileEmp" accept=".xlsx,.xls,.csv" style="max-width:380px"><button class="btn" onclick="up('employees','fileEmp','msgEmp')">Upload</button></div>
+    <div id="msgEmp" class="msg"></div>
+  </div>
+
+  <div class="card">
+    <h2>2. Titles file</h2>
+    <p class="subtitle" style="margin-bottom:10px">Columns: <b>Title, Department, Manager 1 Code</b>, Manager 2 Code (optional).
+      Each title appears for manager 1 and manager 2 under <i>Request Manpower</i>.</p>
+    <p><a href="/templates/titles-template.xlsx" download>Download the template</a> · <span id="stTit" class="subtitle"></span></p>
+    <div class="row"><input type="file" id="fileTit" accept=".xlsx,.xls,.csv" style="max-width:380px"><button class="btn" onclick="up('titles','fileTit','msgTit')">Upload</button></div>
+    <div id="msgTit" class="msg"></div>
+  </div>
+
+  <div class="card">
+    <h2>3. Manager accounts</h2>
+    <p class="subtitle" style="margin-bottom:10px">After uploading both files, create accounts for every manager code in them that has no account yet.
+      They sign in with their code and the password below, and can change it later.</p>
+    <div class="row"><input id="defPass" placeholder="Default password" style="max-width:260px"><button class="btn" onclick="bulk()">Create manager accounts</button></div>
+    <div id="msgBulk" class="msg"></div>
+  </div>
+</main>
+<script src="/assets/app.js"></script>
+<script>
+  initPage(['hr']);
+
+  async function status() {
+    const rows = await api('/api/upload/status').catch(() => []);
+    const t = (k) => { const r = rows.find((x) => x.kind === k); return r ? `Last upload: ${r.rows_count} rows on ${fmtDateTime(r.uploaded_at)}` : 'Not uploaded yet'; };
+    stEmp.textContent = t('employees');
+    stTit.textContent = t('titles');
+  }
+
+  async function up(kind, inputId, msgId) {
+    const f = document.getElementById(inputId).files[0];
+    const msg = document.getElementById(msgId);
+    if (!f) return showMsg(msg, 'Choose a file first', false);
+    const fd = new FormData();
+    fd.append('file', f);
+    showMsg(msg, 'Uploading…', true);
+    try {
+      const r = await api('/api/upload/' + kind, { method: 'POST', body: fd });
+      showMsg(msg, `Uploaded ${r.rows} rows successfully.`, true);
+      status();
+    } catch (e) { showMsg(msg, e.message, false); }
+  }
+
+  async function bulk() {
+    try {
+      const r = await api('/api/users/bulk-managers', { method: 'POST', body: { password: defPass.value } });
+      showMsg(msgBulk, r.created ? `${r.created} manager accounts created.` : 'All managers already have accounts.', true);
+    } catch (e) { showMsg(msgBulk, e.message, false); }
+  }
+
+  status();
+</script>
+</body>
+</html>

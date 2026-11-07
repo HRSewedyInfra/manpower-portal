@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Home - Manpower Request Portal</title>
+<link rel="stylesheet" href="/assets/style.css">
+</head>
+<body>
+<main class="page">
+  <h1 id="hello">Welcome</h1>
+  <p class="subtitle">Choose what you want to do</p>
+  <div class="tiles" id="tiles"></div>
+</main>
+<script src="/assets/app.js"></script>
+<script>
+  const user = initPage();
+  const ICONS = {
+    people: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.6-3.6 3.3-5.5 6.5-5.5s5.9 1.9 6.5 5.5"/><circle cx="17" cy="9" r="2.6"/><path d="M16 14.6c2.8.2 4.8 1.9 5.4 4.9"/></svg>',
+    add: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.6-3.6 3.3-5.5 6.5-5.5 1.6 0 3 .4 4.2 1.2"/><path d="M18 13v7M14.5 16.5h7"/></svg>',
+    flow: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2.5" y="4" width="6" height="5" rx="1.2"/><rect x="15.5" y="4" width="6" height="5" rx="1.2"/><rect x="9" y="15" width="6" height="5" rx="1.2"/><path d="M8.5 6.5h7M18.5 9v3.5H12V15"/></svg>',
+    list: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3.5" y="3" width="17" height="18" rx="2"/><path d="M7.5 8h9M7.5 12h9M7.5 16h5"/></svg>',
+    upload: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 15V4M7.5 8.5 12 4l4.5 4.5"/><path d="M4 15v4a1.5 1.5 0 0 0 1.5 1.5h13A1.5 1.5 0 0 0 20 19v-4"/></svg>',
+    key: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="8" cy="14" r="4"/><path d="m11 11 9-9M17 5l2.5 2.5M14.5 7.5 16.5 9.5"/></svg>',
+    users: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="3.8"/><path d="M4.5 20.5c.8-4 3.8-6.2 7.5-6.2s6.7 2.2 7.5 6.2"/></svg>',
+  };
+  const T = {
+    actual: { href: '/actual.html', icon: 'people', t: 'Actual Manpower', d: 'Current manpower by department and location, with employee names and FTE / Outsource.' },
+    request: { href: '/requests.html', icon: 'add', t: 'Request Manpower', d: 'Request a new title for a project and follow each request through its stages.' },
+    manage: { href: '/requests.html', icon: 'list', t: 'Manpower Requests', d: 'Review all requests, mark stages as done, comment, and enter the Taleo requisition number.' },
+    process: { href: '/hiring-process.html', icon: 'flow', t: 'Hiring Process', d: 'How a request moves from OD BU to an open requisition, and how long each stage takes.' },
+    upload: { href: '/hr-upload.html', icon: 'upload', t: 'Upload Data', d: 'Upload the employees file and the titles file.' },
+    users: { href: '/users.html', icon: 'users', t: 'Users', d: 'Create accounts for managers and OD BU, and reset passwords.' },
+    password: { href: '/change-password.html', icon: 'key', t: 'Change Password', d: 'Set a new password for your account.' },
+  };
+  const BY_ROLE = {
+    manager: ['actual', 'request', 'process', 'password'],
+    od_bu: ['manage', 'actual', 'process', 'password'],
+    hr: ['upload', 'users', 'manage', 'actual', 'process', 'password'],
+  };
+  if (user) {
+    document.getElementById('hello').textContent = 'Welcome, ' + (user.name || user.code);
+    document.getElementById('tiles').innerHTML = (BY_ROLE[user.role] || []).map((k) => {
+      const c = T[k];
+      return `<a class="tile" href="${c.href}">${ICONS[c.icon]}<b>${c.t}</b><span>${c.d}</span></a>`;
+    }).join('');
+  }
+</script>
+</body>
+</html>

@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Manpower Requests</title>
+<link rel="stylesheet" href="/assets/style.css">
+</head>
+<body>
+<main class="page">
+  <h1 id="pageTitle">Request Manpower</h1>
+  <p class="subtitle" id="pageSub"></p>
+
+  <!-- Manager: new request form -->
+  <div class="card" id="formCard" style="display:none">
+    <h2>New request</h2>
+    <form id="reqForm">
+      <div class="form-grid">
+        <div><label>Department</label><select id="dept" required></select></div>
+        <div><label>Title</label><select id="title" required></select></div>
+        <div><label>Project</label><input id="project" required placeholder="Project name"></div>
+        <div><label>Number needed</label><input id="qty" type="number" min="1" value="1" required></div>
+        <div><label>Required from</label><input id="reqFrom" type="date" required></div>
+      </div>
+      <div style="margin-top:14px"><label>Notes (optional)</label><textarea id="notes" rows="2" placeholder="Any details OD BU should know"></textarea></div>
+      <div class="row" style="margin-top:14px"><button class="btn">Submit request</button></div>
+      <div id="formMsg" class="msg"></div>
+    </form>
+  </div>
+
+  <div class="stats" id="stats"></div>
+
+  <div class="card">
+    <div class="form-grid">
+      <div><label>Status</label>
+        <select id="fStatus">
+          <option value="active">Active (in progress + requisition open)</option>
+          <option value="in_progress">In progress</option>
+          <option value="late">Late</option>
+          <option value="requisition_open">Requisition open</option>
+          <option value="closed">Closed</option>
+          <option value="rejected">Rejected</option>
+          <option value="cancelled">Cancelled</option>
+          <option value="">All</option>
+        </select></div>
+      <div id="stageFilterBox"><label>Current stage</label><select id="fStage"><option value="">All</option></select></div>
+      <div><label>Department</label><select id="fDept"><option value="">All</option></select></div>
+      <div><label>Search</label><input id="fSearch" placeholder="Title, project, manager or Taleo no."></div>
+    </div>
+    <div class="row" style="margin-top:12px"><button class="btn secondary small" onclick="exportCsv()">Download Excel (CSV)</button></div>
+  </div>
+
+  <div id="list"><div class="empty">Loading…</div></div>
+</main>
+<script src="/assets/app.js"></script>
+<script>
+  const user = initPage();
+  const OD = user && (user.role === 'od_bu' || user.role === 'hr');
+  let REQS = [], CONFIG = { stages: [], requisitionDays: 10 };
+
+  const STATUS = {
+    in_progress: ['In progress', 'navy'], requisition_open: ['Requisition open', 'green'],
+    closed: ['Closed', 'grey'], rejected: ['Rejected', 'red'], cancelled: ['Cancelled', 'grey'],
+  };
+
+  if (OD) {
+    pageTitle.textContent = 'Manpower Requests';
+    pageSub.textContent = 'Mark each stage as done, add comments, and enter the Taleo requisition number after HCM.';
+  } else {
+    pageSub.textContent = 'Request titles for your departments and follow each request through its stages.';
+    formCard.style.display = '';
+  }
+
+  const isLate = (r) => r.status === 'in_progress' ? r.stages.some((s) => s.state === 'current' && s.late)
+    : r.status === 'requisition_open' ? !!(r.requisition && r.requisition.late) : false;
+
+  function stepHtml(s) {
+    let cls = s.state, info;
+    if (s.state === 'done') info = `Done ${fmtDate(s.completed_at)} · ${s.days_used}/${s.days} days`;
+    else if (s.state === 'current') { info = `Due ${fmtDate(s.due_date)} · ${s.days_used}/${s.days} days`; if (s.late) cls += ' late'; }
+    else info = `${s.days} work days`;
+    return `<div class="step ${cls}"><div class="sn">${esc(s.name)}</div><div class="sd">${info}</div></div>`;
+  }
+
+  function reqStepHtml(r) {
+    const q = r.requisition;
+    if (q) {
+      const finished = r.status === 'closed';
+      const cls = finished ? 'done' : q.late ? 'current late' : 'current';
+      return `<div class="step final ${cls}"><div class="sn">Requisition open</div>
+        <div class="sd">Taleo #${esc(q.number)}<br>${finished ? 'Closed ' + fmtDate(r.closed_at) : 'Due ' + fmtDate(q.due_date)} · ${q.days_used}/${q.days} days</div></div>`;
+    }
+    const ready = r.status === 'in_progress' && r.stages.every((s) => s.state === 'done');
+    return `<div class="step final ${ready ? 'current' : ''}"><div class="sn">Requisition open</div>
+      <div class="sd">${ready ? 'Waiting for Taleo number' : CONFIG.requisitionDays + ' work days'}</div></div>`;
+  }
+
+  function actionsHtml(r) {
+    if (!OD) {
+      if (r.status === 'in_progress' && r.stages[0].state !== 'done' && r.manager_code.toLowerCase() === user.code.toLowerCase()) {
+        return `<div class="od-actions"><button class="btn secondary small" onclick="act(${r.id},'cancel')">Cancel request</button></div>`;
+      }
+      return '';
+    }
+    const parts = [];
+    if (r.status === 'in_progress') {
+      const cur = r.stages.find((s) => s.state === 'current');
+      if (cur) parts.push(`<button class="btn green small" onclick="act(${r.id},'complete-stage')">✓ Mark ${esc(cur.name)} done</button>`);
+      else parts.push(`<input id="taleo-${r.id}" placeholder="Taleo requisition number"><button class="btn navy small" onclick="setTaleo(${r.id})">Open requisition</button>`);
+      if (r.stages.some((s) => s.state === 'done')) parts.push(`<button class="btn secondary small" onclick="act(${r.id},'undo-stage')">Undo last stage</button>`);
+    }
+    if (r.status === 'requisition_open') {
+      parts.push(`<input id="taleo-${r.id}" value="${esc(r.taleo_number)}"><button class="btn secondary small" onclick="setTaleo(${r.id})">Update Taleo no.</button>`);
+      parts.push(`<button class="btn green small" onclick="act(${r.id},'close')">Close (hired)</button>`);
+    }
+    if (r.status === 'in_progress' || r.status === 'requisition_open') {
+      parts.push(`<button class="btn secondary small" style="color:var(--red)" onclick="reject(${r.id})">Reject</button>`);
+    }
+    parts.push(`<input id="cm-${r.id}" placeholder="Add a comment for the manager" style="flex-basis:100%">
+      <button class="btn secondary small" onclick="comment(${r.id})">Add comment</button>`);
+    return `<div class="od-actions">${parts.join('')}</div>`;
+  }
+
+  function cardHtml(r) {
+    const st = STATUS[r.status] || [r.status, 'grey'];
+    const late = isLate(r) ? '<span class="badge red">Late</span>' : '';
+    const comments = r.comments.length ? `<div class="comments"><label>OD BU comments</label>${r.comments.map((c) =>
+      `<div class="comment">${esc(c.body)}<div class="cm">${esc(c.author_name || c.author_code)} · ${fmtDateTime(c.created_at)}</div></div>`).join('')}</div>` : '';
+    return `<div class="req">
+      <div class="req-head">
+        <div>
+          <div class="t">${esc(r.title)} <span class="badge grey">× ${r.quantity}</span></div>
+          <div class="meta">${esc(r.department)} · Project: <b>${esc(r.project)}</b> · Required from <b>${fmtDate(r.required_from)}</b></div>
+          <div class="meta">#${r.id} · Requested by ${esc(r.manager_name || r.manager_code)} on ${fmtDate(r.created_at)}</div>
+          ${r.notes ? `<div class="meta">Notes: ${esc(r.notes)}</div>` : ''}
+        </div>
+        <div class="right"><span class="badge ${st[1]}">${st[0]}</span> ${late}</div>
+      </div>
+      <div class="tracker">${r.stages.map(stepHtml).join('')}${reqStepHtml(r)}</div>
+      ${comments}
+      ${actionsHtml(r)}
+    </div>`;
+  }
+
+  function filtered() {
+    const s = fStatus.value, stg = fStage.value, d = fDept.value, q = fSearch.value.trim().toLowerCase();
+    return REQS.filter((r) => {
+      if (s === 'active' && !['in_progress', 'requisition_open'].includes(r.status)) return false;
+      if (s === 'late' && !isLate(r)) return false;
+      if (s && !['active', 'late'].includes(s) && r.status !== s) return false;
+      if (stg) {
+        const cur = r.status === 'requisition_open' ? 'Requisition open'
+          : r.status === 'in_progress' ? (r.current_stage || 'Waiting for Taleo') : '';
+        if (cur !== stg) return false;
+      }
+      if (d && r.department !== d) return false;
+      if (q && ![r.title, r.project, r.manager_name, r.manager_code, r.taleo_number, r.id].join(' ').toLowerCase().includes(q)) return false;
+      return true;
+    });
+  }
+
+  function render() {
+    const n = (f) => REQS.filter(f).length;
+    stats.innerHTML = `
+      <div class="stat"><div class="n">${n((r) => r.status === 'in_progress')}</div><div class="l">In progress</div></div>
+      <div class="stat"><div class="n" style="color:var(--red)">${n(isLate)}</div><div class="l">Late</div></div>
+      <div class="stat"><div class="n" style="color:var(--green)">${n((r) => r.status === 'requisition_open')}</div><div class="l">Requisition open</div></div>
+      <div class="stat"><div class="n">${n((r) => r.status === 'closed')}</div><div class="l">Closed</div></div>`;
+    const list = filtered();
+    document.getElementById('list').innerHTML = list.length ? list.map(cardHtml).join('')
+      : '<div class="empty">No requests match these filters.</div>';
+  }
+
+  function replace(updated) {
+    REQS = REQS.map((r) => (r.id === updated.id ? updated : r));
+    render();
+  }
+
+  async function act(id, action) {
+    if (action === 'cancel' && !confirm('Cancel this request?')) return;
+    if (action === 'undo-stage' && !confirm('Undo the last completed stage?')) return;
+    if (action === 'close' && !confirm('Close this requisition as hired?')) return;
+    try { replace(await api(`/api/requests/${id}/${action}`, { method: 'POST', body: {} })); }
+    catch (e) { alert(e.message); }
+  }
+  async function setTaleo(id) {
+    const number = document.getElementById('taleo-' + id).value.trim();
+    if (!number) return alert('Enter the Taleo requisition number');
+    try { replace(await api(`/api/requests/${id}/taleo`, { method: 'POST', body: { number } })); }
+    catch (e) { alert(e.message); }
+  }
+  async function reject(id) {
+    const comment = prompt('Rejection reason (the manager will see it):');
+    if (!comment) return;
+    try { replace(await api(`/api/requests/${id}/reject`, { method: 'POST', body: { comment } })); }
+    catch (e) { alert(e.message); }
+  }
+  async function comment(id) {
+    const body = document.getElementById('cm-' + id).value.trim();
+    if (!body) return;
+    try { replace(await api(`/api/requests/${id}/comments`, { method: 'POST', body: { body } })); }
+    catch (e) { alert(e.message); }
+  }
+
+  function exportCsv() {
+    const head = ['#', 'Title', 'Qty', 'Department', 'Project', 'Required from', 'Manager', 'Requested on', 'Status',
+      ...CONFIG.stages.map((s) => s.name + ' done'), 'Taleo no.', 'Requisition opened', 'Last comment'];
+    downloadCsv('manpower-requests.csv', [head, ...filtered().map((r) => [
+      r.id, r.title, r.quantity, r.department, r.project, r.required_from, r.manager_name || r.manager_code,
+      fmtDate(r.created_at), (STATUS[r.status] || [r.status])[0],
+      ...r.stages.map((s) => fmtDate(s.completed_at)), r.taleo_number || '', fmtDate(r.taleo_opened_at),
+      r.comments.length ? r.comments[r.comments.length - 1].body : ''])]);
+  }
+
+  // Manager form
+  let TITLES = [];
+  async function loadTitles() {
+    TITLES = await api('/api/requests/my-titles');
+    const depts = [...new Set(TITLES.map((t) => t.department))];
+    if (!TITLES.length) {
+      reqForm.innerHTML = '<div class="empty">No titles are assigned to you yet. Please contact HR.</div>';
+      return;
+    }
+    dept.innerHTML = depts.map((d) => `<option>${esc(d)}</option>`).join('');
+    const fillTitles = () => {
+      title.innerHTML = TITLES.filter((t) => t.department === dept.value).map((t) => `<option>${esc(t.title)}</option>`).join('');
+    };
+    dept.addEventListener('change', fillTitles);
+    fillTitles();
+    reqFrom.min = new Date().toISOString().slice(0, 10);
+  }
+
+  reqForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    try {
+      await api('/api/requests', { method: 'POST', body: {
+        department: dept.value, title: title.value, project: project.value,
+        quantity: qty.value, required_from: reqFrom.value, notes: notes.value } });
+      showMsg(formMsg, 'Request submitted. It is now with OD BU.', true);
+      project.value = ''; notes.value = ''; qty.value = 1;
+      await loadRequests();
+    } catch (err) { showMsg(formMsg, err.message, false); }
+  });
+
+  async function loadRequests() {
+    REQS = await api('/api/requests');
+    const depts = [...new Set(REQS.map((r) => r.department))].filter(Boolean).sort();
+    const keep = fDept.value;
+    fDept.innerHTML = '<option value="">All</option>' + depts.map((d) => `<option>${esc(d)}</option>`).join('');
+    fDept.value = keep;
+    render();
+  }
+
+  (async () => {
+    try {
+      CONFIG = await api('/api/requests/config');
+      fStage.innerHTML = '<option value="">All</option>' +
+        [...CONFIG.stages.map((s) => s.name), 'Waiting for Taleo', 'Requisition open'].map((s) => `<option>${esc(s)}</option>`).join('');
+      [fStatus, fStage, fDept].forEach((el) => el.addEventListener('change', render));
+      fSearch.addEventListener('input', render);
+      if (!OD) await loadTitles();
+      await loadRequests();
+    } catch (e) { document.getElementById('list').innerHTML = `<div class="empty">${esc(e.message)}</div>`; }
+  })();
+</script>
+</body>
+</html>

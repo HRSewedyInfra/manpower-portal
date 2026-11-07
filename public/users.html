@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Users</title>
+<link rel="stylesheet" href="/assets/style.css">
+</head>
+<body>
+<main class="page">
+  <h1>Users</h1>
+  <p class="subtitle">HR uploads data and manages users · OD BU manages all requests · Managers request manpower</p>
+
+  <div class="card">
+    <h2>Add user</h2>
+    <form id="addForm" class="form-grid">
+      <div><label>Code</label><input id="uCode" required></div>
+      <div><label>Name</label><input id="uName"></div>
+      <div><label>Role</label><select id="uRole"><option value="manager">Manager</option><option value="od_bu">OD BU</option><option value="hr">HR</option></select></div>
+      <div><label>Password</label><input id="uPass" required></div>
+      <div style="align-self:end"><button class="btn">Add</button></div>
+    </form>
+    <div id="msg" class="msg"></div>
+  </div>
+
+  <div class="card">
+    <div class="row" style="margin-bottom:12px"><input id="search" placeholder="Search by code or name" style="max-width:320px"></div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Code</th><th>Name</th><th>Role</th><th></th></tr></thead>
+      <tbody id="rows"></tbody>
+    </table></div>
+  </div>
+</main>
+<script src="/assets/app.js"></script>
+<script>
+  initPage(['hr']);
+  let USERS = [];
+
+  function render() {
+    const q = search.value.trim().toLowerCase();
+    rows.innerHTML = USERS.filter((u) => !q || (u.code + ' ' + u.name).toLowerCase().includes(q)).map((u) => `
+      <tr>
+        <td>${esc(u.code)}</td>
+        <td><input value="${esc(u.name)}" onchange="save('${esc(u.code)}', {name: this.value})"></td>
+        <td><select onchange="save('${esc(u.code)}', {role: this.value})">
+          ${['manager', 'od_bu', 'hr'].map((r) => `<option value="${r}" ${u.role === r ? 'selected' : ''}>${ROLE_LABEL[r]}</option>`).join('')}
+        </select></td>
+        <td class="row">
+          <button class="btn secondary small" onclick="resetPass('${esc(u.code)}')">Reset password</button>
+          <button class="btn secondary small" style="color:var(--red)" onclick="del('${esc(u.code)}')">Delete</button>
+        </td>
+      </tr>`).join('') || '<tr><td colspan="4" class="empty">No users</td></tr>';
+  }
+
+  async function load() { USERS = await api('/api/users'); render(); }
+
+  async function save(code, body) {
+    try { await api('/api/users/' + encodeURIComponent(code), { method: 'PUT', body }); await load(); }
+    catch (e) { alert(e.message); load(); }
+  }
+  async function resetPass(code) {
+    const p = prompt('New password for ' + code + ':');
+    if (p) save(code, { password: p }).then(() => alert('Password changed'));
+  }
+  async function del(code) {
+    if (!confirm('Delete user ' + code + '?')) return;
+    try { await api('/api/users/' + encodeURIComponent(code), { method: 'DELETE' }); load(); } catch (e) { alert(e.message); }
+  }
+
+  addForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    try {
+      await api('/api/users', { method: 'POST', body: { code: uCode.value, name: uName.value, role: uRole.value, password: uPass.value } });
+      showMsg(msg, 'User added', true);
+      addForm.reset();
+      load();
+    } catch (err) { showMsg(msg, err.message, false); }
+  });
+  search.addEventListener('input', render);
+  load();
+</script>
+</body>
+</html>

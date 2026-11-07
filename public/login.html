@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Login - Manpower Request Portal</title>
+<link rel="stylesheet" href="/assets/style.css">
+</head>
+<body>
+<div class="login-wrap">
+  <form class="login-box" id="f">
+    <img src="/assets/logo.png" alt="" onerror="this.style.display='none'">
+    <h1>Manpower Request</h1>
+    <p>Sign in with your employee code</p>
+    <div class="field"><label>Employee code</label><input id="code" autocomplete="username" required></div>
+    <div class="field"><label>Password</label><input id="password" type="password" autocomplete="current-password" required></div>
+    <button class="btn" style="width:100%">Sign in</button>
+    <div id="msg" class="msg"></div>
+  </form>
+</div>
+<script src="/assets/app.js"></script>
+<script>
+  if (getUser() && localStorage.getItem('mp_token')) location.href = '/dashboard.html';
+  document.getElementById('f').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    try {
+      const r = await api('/api/auth/login', { method: 'POST', body: {
+        code: document.getElementById('code').value, password: document.getElementById('password').value } });
+      localStorage.setItem('mp_token', r.token);
+      localStorage.setItem('mp_user', JSON.stringify(r.user));
+      location.href = '/dashboard.html';
+    } catch (err) { showMsg(document.getElementById('msg'), err.message, false); }
+  });
+</script>
+</body>
+</html>

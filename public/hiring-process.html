@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hiring Process</title>
+<link rel="stylesheet" href="/assets/style.css">
+<style>
+  .flow { display: grid; grid-template-columns: repeat(6, 1fr); gap: 0; margin: 10px 0 4px; }
+  .fstep { position: relative; padding: 0 6px; text-align: center; }
+  .fstep .dot {
+    width: 46px; height: 46px; border-radius: 50%; margin: 0 auto 10px; display: flex; align-items: center; justify-content: center;
+    background: var(--navy); color: #fff; font-weight: 700; font-size: 16px; position: relative; z-index: 1;
+  }
+  .fstep:first-child .dot { background: var(--brand); }
+  .fstep:last-child .dot { background: var(--green); }
+  .fstep:not(:last-child)::after {
+    content: ""; position: absolute; top: 23px; left: 50%; width: 100%; height: 3px; background: #d5dae1;
+  }
+  .fstep b { display: block; font-size: 14px; }
+  .fstep .dur { display: inline-block; margin-top: 6px; }
+  .fstep p { color: var(--muted); font-size: 12px; margin: 6px 0 0; line-height: 1.45; }
+  .total { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 18px; }
+  .total .stat { flex: 1; min-width: 180px; }
+  .rules li { margin-bottom: 8px; line-height: 1.55; }
+  .stage-table td:last-child, .stage-table th:last-child { text-align: right; }
+  .stage-table tr.req td { background: var(--navy); color: #fff; font-weight: 600; }
+  .status-legend { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px; }
+  .status-legend .step { font-size: 13px; }
+  @media (max-width: 860px) {
+    .flow { grid-template-columns: 1fr; gap: 14px; }
+    .fstep { display: grid; grid-template-columns: 46px 1fr; gap: 12px; text-align: left; align-items: start; }
+    .fstep .dot { margin: 0; }
+    .fstep:not(:last-child)::after { top: 46px; left: 22px; width: 3px; height: calc(100% - 32px); }
+  }
+</style>
+</head>
+<body>
+<main class="page">
+  <h1>Hiring Process</h1>
+  <p class="subtitle">How a manpower request moves from the manager to an open requisition on Taleo</p>
+
+  <div class="card">
+    <h2>The journey of a request</h2>
+    <div class="flow">
+      <div class="fstep"><div class="dot">0</div><div><b>Manager</b><span class="badge grey dur">Day 0</span>
+        <p>Opens <i>Request Manpower</i>, picks the title, project, number needed and the date they are required from.</p></div></div>
+      <div class="fstep"><div class="dot">1</div><div><b>OD BU</b><span class="badge navy dur">3 work days</span>
+        <p>Reviews the request against the business unit's structure and budget.</p></div></div>
+      <div class="fstep"><div class="dot">2</div><div><b>OD Group</b><span class="badge navy dur">3 work days</span>
+        <p>Group organization development approval.</p></div></div>
+      <div class="fstep"><div class="dot">3</div><div><b>HRIS</b><span class="badge navy dur">2 work days</span>
+        <p>Position is created and set up in the HR system.</p></div></div>
+      <div class="fstep"><div class="dot">4</div><div><b>HCM</b><span class="badge navy dur">2 work days</span>
+        <p>Final setup on HCM before recruitment can start.</p></div></div>
+      <div class="fstep"><div class="dot">✓</div><div><b>Requisition open</b><span class="badge green dur">10 work days</span>
+        <p>OD BU opens the requisition on Taleo and records its number. Recruitment starts.</p></div></div>
+    </div>
+    <div class="total">
+      <div class="stat"><div class="n">10</div><div class="l">Work days for the 4 approval stages</div></div>
+      <div class="stat"><div class="n">10</div><div class="l">Work days with the requisition open</div></div>
+      <div class="stat"><div class="n">20</div><div class="l">Work days in total, request to requisition target</div></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Stage durations</h2>
+    <table class="stage-table">
+      <thead><tr><th>Stage</th><th>Duration</th></tr></thead>
+      <tbody>
+        <tr><td>OD BU</td><td>3 work days</td></tr>
+        <tr><td>OD Group</td><td>3 work days</td></tr>
+        <tr><td>HRIS</td><td>2 work days</td></tr>
+        <tr><td>HCM</td><td>2 work days</td></tr>
+        <tr class="req"><td>Requisition open</td><td>10 work days</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>How to read your request</h2>
+    <div class="status-legend">
+      <div class="step done"><div class="sn">Done</div><div class="sd">Stage finished. Shows the date and the work days it took.</div></div>
+      <div class="step current"><div class="sn">Current stage</div><div class="sd">Where your request is now, with its due date.</div></div>
+      <div class="step current late"><div class="sn">Late</div><div class="sd">The stage has taken longer than its allowed work days.</div></div>
+      <div class="step"><div class="sn">Waiting</div><div class="sd">Starts when the stage before it is done.</div></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Good to know</h2>
+    <ul class="rules">
+      <li><b>Work days are Sunday to Thursday.</b> Fridays and Saturdays are not counted. Each stage's clock starts the day the previous stage is marked done.</li>
+      <li><b>OD BU updates every stage.</b> OD BU marks each stage as done once it is completed, including OD Group, HRIS and HCM.</li>
+      <li><b>Comments.</b> OD BU can add a comment on any request at any time — check your request for updates or questions.</li>
+      <li><b>Requisition number.</b> After HCM, OD BU opens the requisition on Taleo and enters its number on the request, so you can follow up with recruitment.</li>
+      <li><b>Cancelling.</b> You can cancel your own request only while it is still in the OD BU stage.</li>
+      <li><b>Plan ahead.</b> Allow at least 20 work days between submitting the request and the date you need the person, plus the time recruitment needs to hire.</li>
+    </ul>
+  </div>
+</main>
+<script src="/assets/app.js"></script>
+<script>initPage();</script>
+</body>
+</html>

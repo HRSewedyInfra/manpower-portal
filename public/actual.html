@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Actual Manpower</title>
+<link rel="stylesheet" href="/assets/style.css">
+</head>
+<body>
+<main class="page">
+  <h1>Actual Manpower</h1>
+  <p class="subtitle" id="sub">Current manpower by department and location</p>
+
+  <div class="stats" id="stats"></div>
+
+  <div class="card">
+    <div class="form-grid">
+      <div><label>Department</label><select id="fDept"><option value="">All</option></select></div>
+      <div><label>Location</label><select id="fLoc"><option value="">All</option></select></div>
+      <div><label>Type</label><select id="fType"><option value="">All</option><option>FTE</option><option>Outsource</option></select></div>
+      <div><label>Search</label><input id="fSearch" placeholder="Name, code or title"></div>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <button class="btn secondary small" onclick="toggleAll(true)">Expand all</button>
+      <button class="btn secondary small" onclick="toggleAll(false)">Collapse all</button>
+      <button class="btn secondary small" onclick="exportCsv()">Download Excel (CSV)</button>
+    </div>
+  </div>
+
+  <div id="groups"><div class="empty">Loading…</div></div>
+</main>
+<script src="/assets/app.js"></script>
+<script>
+  initPage();
+  let ALL = [];
+
+  function counts(list) {
+    const fte = list.filter((e) => e.emp_type === 'FTE').length;
+    const out = list.filter((e) => e.emp_type === 'Outsource').length;
+    return { total: list.length, fte, out };
+  }
+
+  function filtered() {
+    const d = fDept.value, l = fLoc.value, t = fType.value, q = fSearch.value.trim().toLowerCase();
+    return ALL.filter((e) => (!d || e.department === d) && (!l || e.location === l) && (!t || e.emp_type === t) &&
+      (!q || [e.name, e.code, e.title].join(' ').toLowerCase().includes(q)));
+  }
+
+  function render() {
+    const list = filtered();
+    const c = counts(list);
+    const depts = new Set(list.map((e) => e.department));
+    stats.innerHTML = `
+      <div class="stat"><div class="n">${c.total}</div><div class="l">Total employees</div></div>
+      <div class="stat"><div class="n" style="color:var(--blue)">${c.fte}</div><div class="l">FTE</div></div>
+      <div class="stat"><div class="n" style="color:var(--amber)">${c.out}</div><div class="l">Outsource</div></div>
+      <div class="stat"><div class="n">${depts.size}</div><div class="l">Departments</div></div>`;
+
+    if (!list.length) { groups.innerHTML = '<div class="empty">No employees found.</div>'; return; }
+
+    const byDept = {};
+    list.forEach((e) => { ((byDept[e.department || '(No department)'] ||= {})[e.location || '(No location)'] ||= []).push(e); });
+    const open = list.length <= 60 || fSearch.value.trim();
+
+    groups.innerHTML = Object.keys(byDept).sort().map((dept) => {
+      const locs = byDept[dept];
+      const all = Object.values(locs).flat();
+      const dc = counts(all);
+      return `<details class="group" ${open ? 'open' : ''}>
+        <summary>${esc(dept)}
+          <span class="counts"><span class="badge navy">${dc.total}</span><span class="badge fte">FTE ${dc.fte}</span><span class="badge out">Out ${dc.out}</span></span>
+        </summary>
+        <div class="loc">${Object.keys(locs).sort().map((loc) => {
+          const lc = counts(locs[loc]);
+          return `<h4>📍 ${esc(loc)} <span class="badge grey">${lc.total}</span><span class="badge fte">FTE ${lc.fte}</span><span class="badge out">Out ${lc.out}</span></h4>
+            <div class="table-wrap"><table>
+              <thead><tr><th>Code</th><th>Name</th><th>Title</th><th>Type</th></tr></thead>
+              <tbody>${locs[loc].map((e) => `<tr><td>${esc(e.code)}</td><td>${esc(e.name)}</td><td>${esc(e.title)}</td><td>${typeBadge(e.emp_type)}</td></tr>`).join('')}</tbody>
+            </table></div>`;
+        }).join('')}</div>
+      </details>`;
+    }).join('');
+  }
+
+  function toggleAll(o) { document.querySelectorAll('details.group').forEach((d) => d.open = o); }
+
+  function exportCsv() {
+    downloadCsv('actual-manpower.csv', [['Code', 'Name', 'Title', 'Department', 'Location', 'Type'],
+      ...filtered().map((e) => [e.code, e.name, e.title, e.department, e.location, e.emp_type])]);
+  }
+
+  function fillSelect(sel, values) {
+    sel.innerHTML = '<option value="">All</option>' + values.map((v) => `<option>${esc(v)}</option>`).join('');
+  }
+
+  (async () => {
+    try {
+      ALL = await api('/api/manpower/actual');
+      fillSelect(fDept, [...new Set(ALL.map((e) => e.department))].filter(Boolean).sort());
+      fillSelect(fLoc, [...new Set(ALL.map((e) => e.location))].filter(Boolean).sort());
+      [fDept, fLoc, fType].forEach((el) => el.addEventListener('change', render));
+      fSearch.addEventListener('input', render);
+      render();
+    } catch (e) { groups.innerHTML = `<div class="empty">${esc(e.message)}</div>`; }
+  })();
+</script>
+</body>
+</html>
